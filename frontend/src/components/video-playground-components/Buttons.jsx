@@ -272,4 +272,10 @@ Buttons.propTypes = {
   audioInput: PropTypes.array,
   audioOutput: PropTypes.array,
   videoInput: PropTypes.array,
+  changeAudioInput: PropTypes.any,
+  changeAudioOutput: PropTypes.any,
+  changeVideoInput: PropTypes.any,
+  selectedAudioInput: PropTypes.any,
+  selectedAudioOutput: PropTypes.any,
+  selectedVideoInput: PropTypes.any,
 };

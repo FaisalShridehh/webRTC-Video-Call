@@ -21,8 +21,10 @@ export default function RtcPeerConnection() {
 
   const [offerEls, setOfferEls] = useState([]); // New state for offer elements
 
-  const [userName, setUserName] = useState("Faisal Sh");
-  const [password, setPassword] = useState("faisal123");
+  // const [userName, setUserName] = useState();
+  let userName = "Faisal Sh";
+  // const [password, setPassword] = useState();
+  let password = "faisal123";
 
   const localStreamRef = useRef();
   const remoteStreamRef = useRef();
@@ -39,22 +41,20 @@ export default function RtcPeerConnection() {
   }, [userName, password]);
 
   async function getUserMedia() {
-    return new Promise(function (resolve, reject) {
-      (async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            // audio: true,
-          });
-          setLocalStream(stream);
-          console.log(stream);
-          localStreamRef.current.srcObject = stream;
-          resolve(stream);
-        } catch (error) {
-          console.error("[getUserMedia] => ", error);
-          reject(error);
-        }
-      })();
+    return new Promise(async (resolve, reject) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          // audio: true,
+        });
+        setLocalStream(stream);
+        console.log(stream);
+        localStreamRef.current.srcObject = stream;
+        resolve(stream);
+      } catch (error) {
+        console.error("[getUserMedia] Error:", error);
+        reject(error);
+      }
     });
   }
 
@@ -108,76 +108,123 @@ export default function RtcPeerConnection() {
     //   "peerConnection.signalingState  => ",
     //   peerConnection.signalingState
     // ); // should be have—local—pranswer because CLIENT 2 has set its local desc to it's answer
+
+    offer.answer = answer; // add the answer to the offer object , so the server knows which this offer is related to
+
+    //send the answer to the signaling server , so it can send it back to the client 1
+    //emitWithAck (emit with acknowledgment) is a method in socket
+    // based on google ACK is a way for destination processes or devices to acknowledge that they have received a message from source processes or
+    // devices.
+    const offerIceCandidates = await socket.current.emitWithAck(
+      "newAnswer",
+      offer
+    );
+
+    offerIceCandidates.map((candidate) => {
+      peerConnection.addIceCandidate(candidate);
+      console.log("added ice candidate");
+    });
+
+    console.log("offerIceCandidates => ", offerIceCandidates);
   }
 
   async function createPeerConnection(offer) {
-    return new Promise(function (resolve, reject) {
-      let peerConfiguration = {
-        iceServers: [
-          {
-            urls: [
-              "stun:stun.l.google.com:19302",
-              "stun:stun1.l.google.com:19302",
-            ],
-          },
-        ],
-      };
+    let peerConfiguration = {
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+          ],
+        },
+      ],
+    };
+    return new Promise(async (resolve, reject) => {
+      try {
+        //RTCPeerConnection is the thing that creates the connection
+        //we can pass a config object, and that config object can contain stun servers
+        //which will fetch us ICE candidate
+        const peerConnection = await new RTCPeerConnection(peerConfiguration);
+        const newRemoteStream = new MediaStream();
+        setRemoteStream(newRemoteStream);
+        remoteStreamRef.current.srcObject = newRemoteStream;
 
-      (async () => {
-        try {
-          //RTCPeerConnection is the thing that creates the connection
-          //we can pass a config object, and that config object can contain stun servers
-          //which will fetch us ICE candidate
-          const peerConnection = await new RTCPeerConnection(peerConfiguration);
-          console.log("Created peerConnection: ", peerConnection);
+        console.log("Created peerConnection: ", peerConnection);
 
-          await localStream?.getTracks().map((track) => {
-            peerConnection.addTrack(track, localStream); // we associate our local stream with peerConnection, so that when we call create offer it can check the data stream to found out what information the other browser will need
-          });
+        await localStream?.getTracks().map((track) => {
+          //add local tracks so that they can be sent once the connection is established
+          peerConnection.addTrack(track, localStream); // we associate our local stream with peerConnection, so that when we call create offer it can check the data stream to found out what information the other browser will need
+        });
 
-          peerConnection.addEventListener("signalingstatechange", (event) => {
-            console.log("signalingstatechange => ", event);
-            console.log(" signaling state => ", peerConnection.signalingState); // must be have-local-offer
-          });
+        await Promise.all(
+          (localStream?.getTracks() || []).map(async (track) => {
+            //add local tracks so that they can be sent once the connection is established
 
-          // Add event listener for ice candidate
-          // will triggered when we setLocalDescription()
-          peerConnection.addEventListener("icecandidate", (e) => {
-            console.log("ice candidate found => ", e);
-            if (e.candidate) {
-              socket.current.emit("sendIceCandidate", {
-                iceCandidate: e.candidate,
-                iceUserName: userName,
-                didIOffer: didISendOffer,
-              });
-            }
-          });
+            await peerConnection.addTrack(track, localStream); // we associate our local stream with peerConnection, so that when we call create offer it can check the data stream to found out what information the other browser will need
+          })
+        );
+        peerConnection.addEventListener("signalingstatechange", (event) => {
+          console.log("signalingstatechange => ", event);
+          console.log(" signaling state => ", peerConnection.signalingState); // must be have-local-offer
+        });
 
-          if (offer) {
-            //will not be set/Obj from handleCall()
-            // will be set/Obj from answerOffer()
-            // console.log(
-            //   "peerConnection.signalingState before => ",
-            //   peerConnection.signalingState
-            // ); // should be stable cause no setDesc has been run yet
-
-            await peerConnection.setRemoteDescription(offer.offer);
-            // console.log(
-            //   "peerConnection.signalingState after => ",
-            //   peerConnection.signalingState
-            // ); // should be have-remote-offer, because client2 has setRemoteDesc on the offer
+        // Add event listener for ice candidate
+        // will triggered when we setLocalDescription()
+        peerConnection.addEventListener("icecandidate", (e) => {
+          console.log("ice candidate found => ", e);
+          if (e.candidate) {
+            socket.current.emit("sendIceCandidate", {
+              iceCandidate: e.candidate,
+              iceUserName: userName,
+              didIOffer: didISendOffer,
+            });
           }
+        });
 
-          // Resolve with the created peerConnection
-          resolve(peerConnection);
-        } catch (error) {
-          console.error("[createPeerConnection] => ", error);
-          reject(error);
+        peerConnection.addEventListener("track", (e) => {
+          console.log("track event => ", e);
+          e.streams[0].getTracks().map((track) => {
+            newRemoteStream.addTrack(track, newRemoteStream);
+            console.log("newRemoteStream done");
+          });
+        });
+
+        if (offer) {
+          //will not be set/Obj from handleCall()
+          // will be set/Obj from answerOffer()
+          // console.log(
+          //   "peerConnection.signalingState before => ",
+          //   peerConnection.signalingState
+          // ); // should be stable cause no setDesc has been run yet
+
+          await peerConnection.setRemoteDescription(offer.offer);
+          // console.log(
+          //   "peerConnection.signalingState after => ",
+          //   peerConnection.signalingState
+          // ); // should be have-remote-offer, because client2 has setRemoteDesc on the offer
         }
-      })();
+
+        // Resolve with the created peerConnection
+        resolve(peerConnection);
+      } catch (error) {
+        console.error("[createPeerConnection] => ", error);
+        reject(error);
+      }
     });
   }
 
+  async function addAnswer(offerObj) {
+    //addAnswer is called in socketListeners when an answerResponse is emitted.
+    //at this point, the offer and answer have been exchanged!
+    //now CLIENT1 needs to set the remote
+    await peerConnection.setRemoteDescription(offerObj.answer);
+    console.log("addAnswer signaling state ", peerConnection.signalingState);
+  }
+
+  async function addNewIceCandidate(iceCandidate) {
+    peerConnection.addIceCandidate(iceCandidate);
+    console.log("added ice candidate 2");
+  }
   /**
    * chatgpt answer with the code inside Answer div tag
    * ||
@@ -192,6 +239,21 @@ export default function RtcPeerConnection() {
       } else {
         console.log("no Offers Available");
       }
+    });
+    socket.current.on("answerResponse", (offers) => {
+      console.log("answerResponse");
+
+      if (offers) {
+        console.log("answerResponse => ", offers);
+        addAnswer(offers);
+      } else {
+        console.log("answerResponse : no Offers Available");
+      }
+    });
+
+    socket.current.on("receivedIceCandidate", (iceCandidate) => {
+      addNewIceCandidate(iceCandidate);
+      console.log("receivedIceCandidate iceCandidate =>", iceCandidate);
     });
   }, []);
 
@@ -250,7 +312,7 @@ export default function RtcPeerConnection() {
                 id="local-video"
                 autoPlay
                 playsInline
-                // controls
+                controls
                 ref={localStreamRef}
               ></video>
             </div>
@@ -260,7 +322,7 @@ export default function RtcPeerConnection() {
                 id="remote-video"
                 autoPlay
                 playsInline
-                // controls
+                controls
                 ref={remoteStreamRef}
               ></video>
             </div>
