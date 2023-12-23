@@ -118,7 +118,7 @@ export default function AudioButton({ smallFeedEl }) {
         }
       }
     }
-  };
+  }; 
 
   return (
     <div className="button-wrapper w-[100px] h-20 relative inline-block">
