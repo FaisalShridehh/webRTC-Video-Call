@@ -6,6 +6,7 @@ const initState = {
   videoDevice: "default", // chosen video device
   shareScreen: false, // is user sharing screen or not
   haveMedia: false, //has getUserMedia is run or not and if there is localStream
+  haveCreatedOffer: false, //
 };
 
 export default function callStatus(state = initState, action) {

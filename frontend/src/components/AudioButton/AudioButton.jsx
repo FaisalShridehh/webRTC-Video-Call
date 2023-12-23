@@ -4,6 +4,7 @@ import getDevices from "../VideoButton/getDevices";
 import updateCallStatus from "../../redux/actions/updateCallStatus";
 import addStream from "../../redux/actions/addStream";
 import CaretDropDown from "../CaretDropDown/CaretDropDown";
+import startAudioStream from "./startAudioStream";
 
 export default function AudioButton({ smallFeedEl }) {
   const dispatch = useDispatch();
@@ -52,6 +53,10 @@ export default function AudioButton({ smallFeedEl }) {
     } else {
       //audio is "off" What do we do?
       changeAudioDevice({ target: { value: "inputdefault" } });
+      // console.log(
+      //   'changeAudioDevice({ target: { value: "inputdefault" } })',
+      //   changeAudioDevice({ target: { value: "inputdefault" } })
+      // );
       //add the tracks
       startAudioStream(streams);
     }
@@ -62,7 +67,9 @@ export default function AudioButton({ smallFeedEl }) {
     //1. we need to get that deviceId AND the type
     const deviceId = e.target.value.slice(5);
     const audioType = e.target.value.slice(0, 5);
-    console.log(e.target.value);
+    // console.log("e.target.value => ", e.target.value);
+    // console.log("deviceId => ", deviceId);
+    // console.log("audioType => ", audioType);
 
     if (audioType === "output") {
       //4. (sort of out of order). update the smallFeedEl
@@ -88,15 +95,17 @@ export default function AudioButton({ smallFeedEl }) {
       //come back to this later
 
       for (const s in streams) {
+        console.log(s);
+        console.log(streams[s]);
         if (s !== "localStream") {
           //getSenders will grab all the RTCRtpSenders that the PC has
           //RTCRtpSender manages how tracks are sent via the PC
           const senders = streams[s].peerConnection.getSenders();
           console.log('"Senders" from Audio Button => ', senders);
-          //find the sender that is in charge of the video track
+          //find the sender that is in charge of the Audio track
           const sender = senders.find((s) => {
             if (s.track) {
-              //if this track matches the videoTrack kind, return it
+              //if this track matches the audioTrack kind, return it
               return s.track.kind === audioTrack.kind;
             } else {
               return false;

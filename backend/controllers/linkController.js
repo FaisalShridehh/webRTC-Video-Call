@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
 const linkSecret = "secret";
 
 /**
@@ -10,13 +11,21 @@ const linkSecret = "secret";
  */
 export const getUserLink = async (req, res) => {
   try {
-    const appData = {
-      fullName: "Faisal Shrideh",
-      date: Date.now() + 500000,
-    };
+    // console.log(req.app.get("professionalAppointments"));
 
-    const token = jwt.sign(appData, linkSecret);
+    // const uuid = uuidv4();
+    // const apptData = {
+    //   fullName: "Faisal Shrideh",
+    //   apptDate: Date.now() + 500000,
+    //   uuid,
+    //   clientName: "Person with no name",
+    // };
 
+    const apptData = req.app.get("professionalAppointments")[0];
+
+    req.app.get("professionalAppointments").push(apptData);
+
+    const token = jwt.sign(apptData, linkSecret);
     res.status(200).json({
       url: `http://localhost:5173/video-room?token=${token}`,
       token: token,
@@ -37,10 +46,29 @@ export const validateToken = async (req, res) => {
 
     const decodeData = jwt.verify(token, linkSecret);
 
+    // console.log(req.app.get("professionalAppointment"));
+
     res.status(200).json({ decodeData });
   } catch (error) {
     return res.status(500).json({
       message: "error validating Token",
+      error: error,
+    });
+  }
+};
+
+export const getProLink = async (req, res) => {
+  try {
+    const userData = {
+      fullName: "Faisal Shrideh",
+      proId: 1234,
+    };
+
+    const token = jwt.sign(userData, linkSecret);
+    res.status(200).json(`http://localhost:5173/dashboard?token=${token}`);
+  } catch (error) {
+    return res.status(500).json({
+      message: "error getting user link",
       error: error,
     });
   }

@@ -33,8 +33,14 @@ export default function Home() {
       >
         Go to Stream a Video
       </Link>
-      <Link
+      {/* <Link
         to={`/video-room/?token=${token}`}
+        className="p-2 bg-green-700 text-white rounded-md hover:bg-green-500"
+      >
+        Go to a Room Video
+      </Link> */}
+      <Link
+        to={`/dashboard`}
         className="p-2 bg-green-700 text-white rounded-md hover:bg-green-500"
       >
         Go to a Room Video

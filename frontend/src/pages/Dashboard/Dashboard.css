@@ -1,0 +1,11 @@
+.waiting-text{
+    animation: blinker 1s linear infinite;
+    font-size: 24px;
+    color: red;
+}
+
+@keyframes blinker {
+    50% {
+      opacity: 0;
+    }
+  }

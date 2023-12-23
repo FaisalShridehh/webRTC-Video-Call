@@ -12,11 +12,11 @@ import addStream from "../../redux/actions/addStream";
 import createPeerConnection from "../../../webRTCUtilitis/createPeerConnection";
 import updateCallStatus from "../../redux/actions/updateCallStatus";
 import createSocketConnection from "../../../webRTCUtilitis/socketConnection";
-import clientSocketListeners from "../../../webRTCUtilitis/clientSocketListeners";
+import proSocketListeners from "../../../webRTCUtilitis/proSocketListeners";
 
 const BaseBackendURL = "http://localhost:3000/";
 
-export default function VideoRoom() {
+export default function ProVideoRoom() {
   const dispatch = useDispatch();
 
   //get query string using react-router-dom hook
@@ -31,6 +31,7 @@ export default function VideoRoom() {
   const uuidRef = useRef(null);
   const streamsRef = useRef(null);
   const [showCallInfo, setShowCallInfo] = useState(true);
+  const [haveGottenIce, setHaveGottenIce] = useState(false);
 
   useEffect(() => {
     //fetch user media
@@ -55,6 +56,7 @@ export default function VideoRoom() {
         //EXCEPT, it's not time yet.
         //SDP = information about the feed, and we have NO tracks
         //socket.emit...
+
         largeFeedEl.current.srcObject = remoteStream; // we have the remote stream from our peer connection set the video to be the remote stream that just created feed
       } catch (error) {
         console.error(error);
@@ -64,74 +66,95 @@ export default function VideoRoom() {
   }, [dispatch]);
 
   useEffect(() => {
-    // we cannot update streamRef until we know redux is finished
-    if (streams.remote1) {
-      streamsRef.current = streams;
-    }
-  }, [streams]);
+    async function getIceAsync() {
+      const token = searchParams.get("token");
+      const uuid = searchParams.get("uuid");
 
-  useEffect(() => {
-    async function createOfferAsync() {
-      // we have a video and audio and still need an offer!
-      try {
-        for (const s in streams) {
-          if (s !== "localStream") {
-            try {
-              // pc refer to peerConnection
-              const pc = await streams[s].peerConnection;
-              const offer = await pc.createOffer();
-              await pc.setLocalDescription(offer);
-              // get the token form the url for the socket connection
-              const token = searchParams.get("token");
+      const socket = createSocketConnection(token);
 
-              // get the socket for socket connection
-              const socket = createSocketConnection(token);
-              // console.log(apptData);
-              socket.emit("newOffer", { offer, apptInfo: apptData });
-            } catch (error) {
-              console.error(error);
-            }
+      const iceCandidates = await socket.emitWithAck(
+        "getIce",
+        uuid,
+        "professional"
+      );
+
+      console.log("iceCandidates received => ", iceCandidates);
+      iceCandidates.forEach((iceC) => {
+        for (const key in streams) {
+          if (key !== "localStream") {
+            const pc = streams[key].peerConnection;
+            pc.addIceCandidate(iceC);
+            console.log("========== Added Ice Candidate!!!!!!");
           }
         }
-        dispatch(updateCallStatus("haveCreatedOffer", true));
-      } catch (error) {
-        console.error(error);
+      });
+    }
+    if (streams.remote1 && !haveGottenIce) {
+      setHaveGottenIce(true);
+      getIceAsync();
+      // we cannot update streamRef until we know redux is finished
+      streamsRef.current = streams;
+    }
+  }, [haveGottenIce, searchParams, streams]);
+
+  useEffect(() => {
+    async function setAsyncOffer() {
+      for (const key in streams) {
+        if (key !== "localStream") {
+          const pc = streams[key].peerConnection;
+          await pc.setRemoteDescription(callStatus.offer);
+          console.log(pc.signalingState); // should be have remote offer
+        }
       }
     }
+
+    if (callStatus.offer && streams.remote1 && streams.remote1.peerConnection) {
+      setAsyncOffer();
+    }
+  }, [callStatus.offer, streams, streams.remote1]);
+  useEffect(() => {
+    async function createAnswerAsync() {
+      // we have audio and video, we can make an answer and setLocalDescription
+      for (const key in streams) {
+        if (key !== "localStream") {
+          const pc = streams[key].peerConnection;
+
+          // make an answer
+          const answer = await pc.createAnswer();
+          // because this is the answering client , the answer is the localDescription
+          await pc.setLocalDescription(answer);
+
+          console.log(pc.signalingState); // should be have local answer
+          dispatch(updateCallStatus("haveCreatedAnswer", true));
+          dispatch(updateCallStatus("answer", answer));
+          // emit the answer to the server
+          const token = searchParams.get("token");
+          const uuid = searchParams.get("uuid");
+
+          const socket = createSocketConnection(token);
+
+          socket.emit("newAnswer", { answer, uuid });
+        }
+      }
+    }
+
+    // we only create an answer if audio and video are enabled and haveCreatedAnswer is false
+    // this may run many times , but these 3 conditions will happen once
     if (
       callStatus.video === "enabled" &&
       callStatus.audio === "enabled" &&
-      !callStatus.haveCreatedOffer
+      !callStatus.haveCreatedAnswer
     ) {
-      createOfferAsync();
+      createAnswerAsync();
     }
   }, [
-    apptData,
     callStatus.audio,
-    callStatus.haveCreatedOffer,
+    callStatus.haveCreatedAnswer,
     callStatus.video,
     dispatch,
     searchParams,
     streams,
   ]);
-
-  useEffect(() => {
-    // listen for changes to callStatus.answer
-    // if its exist , we have an answer
-    async function asyncAddAnswer() {
-      for (const key in streams) {
-        if (key !== "localStream") {
-          const pc = streams[key].peerConnection;
-          await pc.setRemoteDescription(callStatus.answer);
-          console.log("pc.signalingState => ", pc.signalingState);
-          console.log("Answer Added");
-        }
-      }
-    }
-    if (callStatus.answer) {
-      asyncAddAnswer();
-    }
-  }, [callStatus.answer, streams]);
 
   // grab the token query string
   useEffect(() => {
@@ -159,30 +182,9 @@ export default function VideoRoom() {
     const token = searchParams.get("token");
     // console.log("searchParams => ", searchParams);
     // console.log("token => ", token);
-
-    // fetch decoded token to validate it
-    async function fetchDecodedToken() {
-      try {
-        const response = await axios.post(`${BaseBackendURL}validate-link`, {
-          token,
-        });
-        // console.log(response.data);
-        setApptData(response.data.decodeData);
-        uuidRef.current = response.data.uuid;
-      } catch (error) {
-        console.error(error);
-      }
-    }
-    fetchDecodedToken();
-  }, [searchParams]);
-
-  useEffect(() => {
-    const token = searchParams.get("token");
-    // console.log("searchParams => ", searchParams);
-    // console.log("token => ", token);
     const socket = createSocketConnection(token);
 
-    clientSocketListeners(socket, dispatch, addIceCandidateToPc);
+    proSocketListeners.proVideoSocketListeners(socket, addIceCandidateToPc);
   }, [dispatch, searchParams]);
 
   function addIceCandidateToPc(iceC) {
@@ -193,7 +195,6 @@ export default function VideoRoom() {
         const pc = streamsRef.current[key].peerConnection;
         pc.addIceCandidate(iceC);
         console.log("added an iceCandidate to existing page");
-        setShowCallInfo(false);
       }
     }
   }
@@ -202,12 +203,13 @@ export default function VideoRoom() {
     // emit a new ice candidate to the signaling server
     const token = searchParams.get("token");
 
+    const uuid = searchParams.get("uuid");
     const socket = createSocketConnection(token);
 
     socket.emit("iceToServer", {
       iceC,
-      who: "client",
-      uuid: uuidRef.current, // we used a useRef to keep value fresh
+      who: "professional",
+      uuid, // we used a useRef to keep value fresh
     });
   }
 
@@ -230,22 +232,22 @@ export default function VideoRoom() {
           playsInline
           ref={smallFeedEl}
         ></video>
-        {showCallInfo ? <CallInfo apptData={apptData} /> : <></>}
+        {callStatus.audio === "off" || callStatus.video === "off" ? (
+          <>
+            <div className="call-info absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border border-[#cacaca] bg-[#222] p-2.5 text-white text-center ">
+              <h1>
+                {searchParams.get("client")} is in the waiting room
+                <br />
+                Call will start when video and audio is enabled
+              </h1>
+            </div>
+          </>
+        ) : (
+          <></>
+        )}
         <ChatWindow />
       </div>
-      <ActionButtons
-        smallFeedEl={smallFeedEl}
-        largeFeedEl={largeFeedEl}
-      />
+      <ActionButtons smallFeedEl={smallFeedEl} />
     </div>
   );
 }
-
-/*
- <h1>
-        {apptData.fullName} at{" "}
-        <TimeAgo
-          datetime={apptData.date} // className="text-xs font-semibold"
-        />{" "}
-      </h1>
- */
